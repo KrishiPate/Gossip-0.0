@@ -1,22 +1,109 @@
-# COMPUTER NETWORKS ASSIGNMENT 1 (B20EE030)
-## How to run the code?
-1. Delete all the content of `config.txt` file.
-2. Delete the content of `outputpeer.txt` and `outputseed.txt` for better understanding of the output. (Not mendetory step)
-3. Run the given code snippet in terminal to activate a seed node
-```
-python seed.py
-```
-4. Give a **unique port no.** for the seed address as the input.
-5. Run the given snippet (point 3) in multiple instances of terminal to get multiple seed nodes. **Make sure to provide unique port numbers for every instance.**
-6. Run the given code snippet in terminal to activate a peer node
-```
-python peer.py
-```
-7. Give a **unique port no.** for the peer address as the input.
-8. Run the given snippet (point 6) in multiple instances of terminal to get multiple peer nodes. **Make sure to provide unique port numbers for every instance.**
-9. Now the network is up and running. You can check the `terminal` OR the `outputpeer.txt` and `outputseed.txt` files for the logs.
+# GOSSIP 0.0
+![License](https://img.shields.io/badge/License-MIT-green)
+![Python](https://img.shields.io/badge/Python-3.8%2B-blue)
 
-## Extra Features implemented
+## Objective
+Built a Gossip protocol over a peer-to-peer network to broadcast messages and check the liveness of connected peers. Here “liveness” means that the peer is up and running, and is able to respond to messages sent to it.
+
+## Table of Contents
+
+1. [Overview](#Overview)
+2. [Network setup](#network-setup)
+3. [Gossip Message Format](#gossip-message-format)
+4. [Gossip protocol](#gossip-protocol)
+5. [Liveliness message format](#liveliness-message-format)
+6. [Liveliness Testing](#liveliness-testing)
+7. [Reporting 'Dead' Node](#reporting-dead-node)
+8. [Extra Features](#extra-features)
+9. [Installation](#installation)
+10. [Results](#results)
+11. [License](#license)
+12. [Contact](#contact)
+
+
+## Overview
+Each peer must connect to at least $ \lfloor n/2 \rfloor+ 1$ seeds out of n available seeds. Note that $n$ will vary for each instance of the peer-to-peer network and the config file should be changed accord-
+ingly. Config file contains the details (IP Address:Port) of seeds. The definitions of ”seed”,”peer” etc. are given below. Each ”peer” in the network must be connected to a randomly chosen subset
+of other peers. The network must be connected, that is the graph of peers should be a connected
+graph. In order to bootstrap the whole process, the network should have more than one Seed node
+which has information (such as IP address and Port Numbers) about other peers in the network.
+Any new node first connects to seed nodes to get information about other peers, and then connects
+to a subset of these.
+
+Once the network is formed, the peers broadcast messages in the network and keep checking the
+liveness of connected peers in regular intervals. If a node is found to be dead, the details of that
+node needs to be sent to the seeds.
+
+
+## Network setup
+1. $Seed Nodes$: A Seed node is a node that is used by a peer to get into the P2P network. There should be $n$ $(n>1)$ seed nodes active, this number n will be chosen arbitrarily for different instances of P2P network. A Seed node maintains a list of IP address and port number pairs of peers that have connected to it. This list is called Peer List (PL). On startup, any new peer registers itself with at least $ \lfloor n/2 \rfloor+ 1$. randomly chosen seed nodes. Registration request triggers an event at the seed node to add an entry containing the peer’s IP and port number to the PL. For simplicity, in this project, seed nodes are not peers, that is, they do not perform actions of peers as described below. Seed Node helps in building a Peer to Peer Network by giving details about already registered Peer Nodes to new Peer Nodes. 
+When a seed receives a ‘dead node’ message (details given below) from any peer, it should remove the dead node’s details from the PL if present.
+Please note that for this to happen, the peers will not close connection formed initially with the seed nodes.
+
+2. $Peer Nodes$: On launching the peer node, it first reads the IP Addresses and Port number of seeds from a config file. The IP Addresses and Port Numbers of the seeds will be hardcoded in this config file. The peer then randomly chooses  $ \lfloor n/2 \rfloor+ 1$. seed nodes and registers its identity (IP address:
+port) with them. After registration with the chosen seed nodes, a peer requests the list of
+peers available at the seed node. In response, the seed nodes send their peer list. The peer
+node then takes a union of all the peer lists that it received from different seeds and randomly
+selects a maximum of 4 distinct peer nodes and establishes a TCP connection with each of
+them.
+Along with this, every node maintains a data structure called Message List(ML) to efficiently
+broadcast a gossip message so that every message travels through a link (pair of connected
+peers) at most once. ML consists of the hash of the message, and information about which
+of its connected peers it has sent the message to or received the message from. ML can also
+have other fields as per your needs.
+Also, the peer nodes have to check for the liveness of its connected peers periodically. So a
+node will send a liveness request message to all the peers it is connected to every 13 seconds.
+If a node gets this message, they have to reply only to the sender with the liveness reply
+message. If 3 consecutive liveness messages are not replied to, the node will notify the seed
+nodes that it is connected to, that this particular IP Address is not responding. The peer will
+then close the TCP connection with the node that isn’t alive. Upon getting the message that
+a particular node is not alive, the seed will remove the details of the ’dead’ node from it’s PL.
+
+## Gossip Message Format
+A peer should generate a message of the form
+
+```bash
+<self.timestamp>:<self.IP>:<self.Msg>
+```
+Such messages will be generated by each peer node every 5 seconds. The first message should
+be generated by a peer after it connects to selected neighbors after registration. A peer will stop
+message generation after it generates 10 messages.
+
+## Gossip protocol
+After a node (peer) generates a message M, it transmits M to all its adjacent nodes. On receipt of a
+message for the first time, a node makes an entry in the ML $(<hash(M),true>)$ and forwards it to all
+peers except the peer from which it got the message. On receiving the same message subsequently,
+the node just ignores it.
+Maintaining ML will prevent the nodes from forwarding the same Message more than once. This
+is to avoid unnecessary forwarding, and to prevent loops.
+
+
+## Liveliness message format
+The liveness request message format should be:
+
+```bash
+Liveness Request:<self.timestamp>:<self.IP >
+```
+The liveness reply message format should be:
+```bash
+Liveness Reply:<sender.timestamp >:<sender.IP >:<self.IP >
+```
+The ’self.timestamp’ in liveness request must match ’sender.timestamp’ in liveness reply. Similarly,
+’self.IP’ should match ’sender.IP’ in liveness requests and replies respectively.
+
+## Liveliness Testing
+The liveness messages should be sent every 13 seconds, even after the gossip broadcast has stopped.
+The liveness messages won’t stop until the node goes offline.
+
+## Reporting 'Dead' Node
+When 3 consecutive liveness requests do not receive a reply, the peer sends a message of the following
+format to all the seeds it is connected to:
+
+```bash
+Dead Node:<DeadNode.IP>:<DeadNode.Port>:<self.timestamp>:<self.IP>
+```
+
+## Extra Features 
 ### 1. Automatic updation of `config.txt`.
 - As new seeds are created they automatically get added to the config file. No need to input the seed address manually. 
 
@@ -24,3 +111,38 @@ python peer.py
 ### 2. Implemented continues user interaction with both seeds and peers.
 - When the user runs `seed.py` file, they will be asked to get the current status and address of the connected peer nodes.
 - When the user runs `peer.py` file, they will be asked to get the current status and address of the connected peer nodes as well as the seed nodes.
+
+## Installation
+1. **Clone the repository**
+```bash
+git clone https://github.com/KrishiPate/Gossip-0.0.git
+cd Gossip-0.0
+```
+2. Delete all the content of `config.txt` file.
+2. Delete the content of `outputpeer.txt` and `outputseed.txt` for better understanding of the output. (Not mendetory step)
+3. Run the given code snippet in terminal to activate a seed node
+```bash
+python seed.py
+```
+4. Give a **unique port no.** for the seed address as the input.
+5. Run the given snippet (point 3) in multiple instances of terminal to get multiple seed nodes. **Make sure to provide unique port numbers for every instance.**
+6. Run the given code snippet in terminal to activate a peer node
+```bash
+python peer.py
+```
+7. Give a **unique port no.** for the peer address as the input.
+8. Run the given snippet (point 6) in multiple instances of terminal to get multiple peer nodes. **Make sure to provide unique port numbers for every instance.**
+9. Now the network is up and running. 
+
+
+## Results
+You can check the `terminal` OR the `outputpeer.txt` and `outputseed.txt` files for the logs.
+
+## License
+This project is licensed under the MIT License
+
+## Contact
+For any inquiries, please contact:
+- Krishi Patel
+- GitHub: Krishi-Patel-2610
+- Email: krishi.patel9426@gmail.com
